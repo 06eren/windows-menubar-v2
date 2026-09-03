@@ -161,4 +161,35 @@ public partial class MainWindow
 
     private void CalendarTodayBtn_Click(object sender, RoutedEventArgs e)
         => _viewModel?.ResetCalendarToToday();
+
+    // ── Media/Lyrics Popup ────────────────────────────────────────────────────
+
+    private async void MediaLyricsPopup_Opened(object sender, EventArgs e)
+    {
+        if (_viewModel == null || !_viewModel.Settings.ShowLyrics) return;
+        await _viewModel.LoadLyricsForCurrentMediaAsync();
+    }
+
+    private async void ShowLyrics_Changed(object sender, RoutedEventArgs e)
+    {
+        SettingsService.Save();
+        if (_viewModel?.Settings.ShowLyrics == true && _viewModel.CurrentMedia.HasMedia)
+        {
+            await _viewModel.LoadLyricsForCurrentMediaAsync();
+        }
+    }
+
+    // ── Multi-Monitor ─────────────────────────────────────────────────────────
+
+    private void MultiMonitor_Changed(object sender, RoutedEventArgs e)
+    {
+        SettingsService.Save();
+        _viewModel?.ToggleMultiMonitorCommand.Execute(null);
+    }
+
+    private void SyncMonitors_Changed(object sender, RoutedEventArgs e)
+    {
+        SettingsService.Save();
+        _viewModel?.SyncAllMonitorsCommand.Execute(null);
+    }
 }

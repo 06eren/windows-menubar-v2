@@ -39,4 +39,14 @@ public partial class BarSettings : ObservableObject
     [ObservableProperty] private bool _showBrightness = true;
     [ObservableProperty] private bool _showTaskView = true;
     [ObservableProperty] private bool _showScreenshot = true;
+
+    // ── Media / Lyrics ──
+    [ObservableProperty] private bool _showLyrics = false;            // Şarkı sözlerini göster
+    [ObservableProperty] private bool _showAlbumArt = true;           // Album kapağını göster
+    [ObservableProperty] private bool _showLyricsInBar = false;       // Bar'da anlık sözleri göster (karaoke mode)
+
+    // ── Multi-Monitor ──
+    [ObservableProperty] private bool _enableMultiMonitor = false;    // Çoklu monitör desteği
+    [ObservableProperty] private bool _syncMonitors = true;           // Monitörleri senkronize et
+    [ObservableProperty] private string _monitorProfilesJson = "[]";  // Monitör profilleri JSON
 }

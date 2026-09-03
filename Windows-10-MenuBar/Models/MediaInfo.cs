@@ -8,6 +8,10 @@ public class MediaInfo
     public string Title  { get; set; } = string.Empty;
     public string Artist { get; set; } = string.Empty;
     public bool IsPlaying { get; set; }
+    
+    // Playback position - senkronize lyrics için
+    public TimeSpan Position { get; set; } = TimeSpan.Zero;
+    public TimeSpan Duration { get; set; } = TimeSpan.Zero;
 
     /// <summary>
     /// Bir medya kaynağı yüklü mü (oynatılıyor VEYA duraklatılmış)?

@@ -23,6 +23,7 @@ public partial class BarViewModel : ObservableObject, IDisposable
     private readonly MediaService        _media        = new();
     private readonly HardwareService     _hardware     = new();
     private readonly NotificationService _notifications = new();
+    private readonly LyricsService       _lyrics       = new();
 
     // ── Clock ─────────────────────────────────────────────────────────────────
     [ObservableProperty] private string _currentTime = "";
@@ -34,6 +35,10 @@ public partial class BarViewModel : ObservableObject, IDisposable
 
     // ── Media ─────────────────────────────────────────────────────────────────
     [ObservableProperty] private MediaInfo _currentMedia = new();
+    [ObservableProperty] private LyricsInfo? _currentLyrics = null;
+    [ObservableProperty] private bool _isLoadingLyrics = false;
+    [ObservableProperty] private string _currentLyricLine = "";  // Bar'da gösterilen anlık söz
+    private DispatcherTimer? _lyricsTimer;
 
     // ── Network ───────────────────────────────────────────────────────────────
     [ObservableProperty] private bool _isWifiConnected;
@@ -299,6 +304,51 @@ public partial class BarViewModel : ObservableObject, IDisposable
     [RelayCommand] private async Task PlayPauseMediaAsync() => await _media.PlayPauseAsync();
     [RelayCommand] private async Task NextMediaAsync()      => await _media.NextAsync();
 
+    // ── Lyrics ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Şu an çalan medya için şarkı sözlerini yükle
+    /// </summary>
+    public async Task LoadLyricsForCurrentMediaAsync()
+    {
+        if (!CurrentMedia.HasMedia || string.IsNullOrWhiteSpace(CurrentMedia.Artist) || 
+            string.IsNullOrWhiteSpace(CurrentMedia.Title))
+        {
+            CurrentLyrics = null;
+            return;
+        }
+
+        IsLoadingLyrics = true;
+        
+        try
+        {
+            var lyrics = await _lyrics.GetLyricsAsync(CurrentMedia.Artist, CurrentMedia.Title);
+            CurrentLyrics = lyrics;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Lyrics load error: {ex.Message}");
+            CurrentLyrics = new LyricsInfo
+            {
+                Artist = CurrentMedia.Artist,
+                Title = CurrentMedia.Title,
+                Lyrics = "Şarkı sözleri yüklenirken hata oluştu",
+                IsAvailable = false
+            };
+        }
+        finally
+        {
+            IsLoadingLyrics = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ClearLyricsCache()
+    {
+        _lyrics.ClearCache();
+        CurrentLyrics = null;
+    }
+
     // ── Network commands ──────────────────────────────────────────────────────
 
     [RelayCommand] private async Task SelectWifiAsync(WifiInfo info)
@@ -352,6 +402,42 @@ public partial class BarViewModel : ObservableObject, IDisposable
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             { FileName = "snippingtool", Arguments = "/clip", UseShellExecute = true }); }
         catch { }
+    }
+
+    // ── Multi-Monitor commands ────────────────────────────────────────────────
+
+    [RelayCommand]
+    private void ToggleMultiMonitor()
+    {
+        Settings.EnableMultiMonitor = !Settings.EnableMultiMonitor;
+        SaveSettings();
+        
+        // App.xaml.cs'deki static metodu çağır
+        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            var mainWindow = System.Windows.Application.Current.MainWindow as MainWindow;
+            if (mainWindow != null)
+            {
+                App.ToggleMultiMonitor(Settings.EnableMultiMonitor, mainWindow);
+            }
+        });
+    }
+
+    [RelayCommand]
+    private void SyncAllMonitors()
+    {
+        if (!Settings.EnableMultiMonitor) return;
+        
+        SaveSettings();
+        App.SyncAllMonitors();
+    }
+
+    [RelayCommand]
+    private void EqualizeMonitorProfiles()
+    {
+        if (!Settings.EnableMultiMonitor) return;
+        
+        App.EqualizeMonitorProfiles();
     }
 
     // ── Settings commands ─────────────────────────────────────────────────────
@@ -510,6 +596,7 @@ public partial class BarViewModel : ObservableObject, IDisposable
     {
         // Timer'ları durdur
         _clockTimer?.Stop();
+        _lyricsTimer?.Stop();
         
         // Event subscription'ları temizle
         if (_media != null)
@@ -525,8 +612,74 @@ public partial class BarViewModel : ObservableObject, IDisposable
 
     private void OnMediaChanged(MediaInfo info)
     {
-        System.Windows.Application.Current.Dispatcher.InvokeAsync(() => CurrentMedia = info,
-            DispatcherPriority.Background);
+        System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
+        {
+            CurrentMedia = info;
+            
+            // Lyrics timer'ı başlat/durdur
+            if (Settings.ShowLyricsInBar && info.IsPlaying && info.HasMedia)
+            {
+                StartLyricsTimer();
+            }
+            else
+            {
+                StopLyricsTimer();
+                CurrentLyricLine = "";
+            }
+            
+            // Otomatik lyrics yükleme - eğer ayardan açıksa
+            if ((Settings.ShowLyrics || Settings.ShowLyricsInBar) && info.HasMedia)
+            {
+                await LoadLyricsForCurrentMediaAsync();
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private void StartLyricsTimer()
+    {
+        if (_lyricsTimer == null)
+        {
+            _lyricsTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(200) // 200ms - daha az CPU
+            };
+            _lyricsTimer.Tick += LyricsTimer_Tick;
+        }
+        
+        if (!_lyricsTimer.IsEnabled)
+            _lyricsTimer.Start();
+    }
+
+    private void StopLyricsTimer()
+    {
+        _lyricsTimer?.Stop();
+    }
+
+    private void LyricsTimer_Tick(object? sender, EventArgs e)
+    {
+        if (CurrentLyrics?.SyncedLyrics == null || !CurrentMedia.IsPlaying)
+        {
+            if (!string.IsNullOrEmpty(CurrentLyricLine))
+                CurrentLyricLine = "";
+            return;
+        }
+
+        // MediaService'den gelen position'ı kullan
+        var position = CurrentMedia.Position;
+        if (position < TimeSpan.Zero)
+            position = TimeSpan.Zero;
+        
+        // Mevcut zamana uygun lyrics satırını bul
+        var currentLine = CurrentLyrics.SyncedLyrics
+            .Where(l => l.Time <= position)
+            .OrderByDescending(l => l.Time)
+            .FirstOrDefault();
+
+        var newLine = currentLine?.Text ?? "";
+        
+        // Sadece değişti ise update et (gereksiz PropertyChanged'ı önle)
+        if (CurrentLyricLine != newLine)
+            CurrentLyricLine = newLine;
     }
 
     private void OnNewNotificationArrived()

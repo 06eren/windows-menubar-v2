@@ -130,6 +130,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        // Alt+F4 veya X butonu ile kapatma girişimlerini engelle
+        // Sadece tray menu'den çıkış yapılabilsin
         if (App.TrayIcon != null)
         {
             e.Cancel = true;

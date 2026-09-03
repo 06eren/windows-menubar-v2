@@ -58,6 +58,18 @@ public partial class MainWindow
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int WM_WINDOWPOSCHANGING = 0x0046;
+        const int WM_SYSCOMMAND = 0x0112;
+        const int SC_CLOSE = 0xF060;
+
+        // Alt+F4 veya X butonu - kapatmayı engelle, gizle
+        if (msg == WM_SYSCOMMAND && ((int)wParam & 0xFFF0) == SC_CLOSE)
+        {
+            handled = true;
+            HideBar();
+            App.TrayIcon?.SyncVisibility(false);
+            return IntPtr.Zero;
+        }
+
         if (msg == WM_WINDOWPOSCHANGING && !_suppressPositionLock)
         {
             var pos = Marshal.PtrToStructure<WINDOWPOS>(lParam);

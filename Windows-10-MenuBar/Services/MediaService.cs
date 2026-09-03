@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Windows.Media.Control;
 using Windows_10_MenuBar.Models;
 
@@ -11,6 +12,10 @@ namespace Windows_10_MenuBar.Services;
 public class MediaService
 {
     private GlobalSystemMediaTransportControlsSession? _session;
+    private DispatcherTimer? _positionTimer;
+    private DateTime _lastPlayStartTime = DateTime.Now;
+    private TimeSpan _lastPosition = TimeSpan.Zero;
+    private string _lastTrackId = "";
 
     public event Action<MediaInfo>? MediaChanged;
 
@@ -45,6 +50,7 @@ public class MediaService
             {
                 _session.MediaPropertiesChanged -= OnPropertiesChanged;
                 _session.PlaybackInfoChanged    -= OnPlaybackChanged;
+                _session.TimelinePropertiesChanged -= OnTimelineChanged;
             }
             catch { }
         }
@@ -54,20 +60,75 @@ public class MediaService
         if (session == null)
         {
             // Oturum tamamen kapandıysa paneli temizle
+            StopPositionTimer();
             MediaChanged?.Invoke(new MediaInfo());
             return;
         }
 
         session.MediaPropertiesChanged += OnPropertiesChanged;
         session.PlaybackInfoChanged    += OnPlaybackChanged;
+        session.TimelinePropertiesChanged += OnTimelineChanged;
         _ = ReadMediaAsync(session);
+        
+        // Position tracking timer başlat (seek detection için)
+        StartPositionTimer();
+    }
+
+    private async void OnTimelineChanged(GlobalSystemMediaTransportControlsSession s, TimelinePropertiesChangedEventArgs? _)
+    {
+        // Timeline değişti = seek/forward yapıldı, position'ı resetle
+        _lastPosition = TimeSpan.Zero;
+        _lastPlayStartTime = DateTime.Now;
+        System.Diagnostics.Debug.WriteLine("TIMELINE CHANGED - Position reset");
+        await ReadMediaAsync(s);
+    }
+
+    private void StartPositionTimer()
+    {
+        if (_positionTimer == null)
+        {
+            _positionTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromSeconds(1) // Her saniye position güncelle
+            };
+            _positionTimer.Tick += async (s, e) => 
+            {
+                if (_session != null)
+                    await ReadMediaAsync(_session);
+            };
+        }
+        
+        if (!_positionTimer.IsEnabled)
+            _positionTimer.Start();
+    }
+
+    private void StopPositionTimer()
+    {
+        _positionTimer?.Stop();
     }
 
     private async void OnPropertiesChanged(GlobalSystemMediaTransportControlsSession s, MediaPropertiesChangedEventArgs? _)
         => await ReadMediaAsync(s);
 
     private async void OnPlaybackChanged(GlobalSystemMediaTransportControlsSession s, PlaybackInfoChangedEventArgs? _)
-        => await ReadMediaAsync(s);
+    {
+        // Playback durumu değişti - pause/resume için position güncelle
+        var play = s.GetPlaybackInfo();
+        if (play.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+        {
+            // Resume - şu anki position'dan devam et
+            _lastPlayStartTime = DateTime.Now;
+            System.Diagnostics.Debug.WriteLine("RESUMED");
+        }
+        else if (play.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused)
+        {
+            // Pause - mevcut position'ı kaydet
+            _lastPosition = _lastPosition + (DateTime.Now - _lastPlayStartTime);
+            System.Diagnostics.Debug.WriteLine($"PAUSED at {_lastPosition:mm\\:ss}");
+        }
+        
+        await ReadMediaAsync(s);
+    }
 
     // ── Read ─────────────────────────────────────────────────────────────────
 
@@ -88,12 +149,36 @@ public class MediaService
             if (hasTitle && props.Thumbnail != null)
                 thumbnail = await LoadThumbnailAsync(props.Thumbnail);
 
+            // Track ID oluştur (şarkı değişikliği tespiti için)
+            string trackId = $"{props.Artist}|{props.Title}";
+            
+            // Şarkı değişti mi kontrol et
+            if (trackId != _lastTrackId)
+            {
+                _lastTrackId = trackId;
+                _lastPosition = TimeSpan.Zero;
+                _lastPlayStartTime = DateTime.Now;
+                System.Diagnostics.Debug.WriteLine($"NEW TRACK: {props.Title}");
+            }
+            
+            // Position hesapla - oynatılıyorsa elapsed time ekle
+            TimeSpan position = _lastPosition;
+            if (isPlaying)
+            {
+                position = _lastPosition + (DateTime.Now - _lastPlayStartTime);
+            }
+            
+            // Duration - SMTC'den alınamıyor, sıfır bırak
+            TimeSpan duration = TimeSpan.Zero;
+
             MediaChanged?.Invoke(new MediaInfo
             {
                 Title     = props.Title,
                 Artist    = props.Artist,
                 IsPlaying = isPlaying,
                 Thumbnail = thumbnail,
+                Position  = position,
+                Duration  = duration,
             });
         }
         catch { }
