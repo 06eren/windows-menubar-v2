@@ -24,6 +24,10 @@ public partial class BarViewModel : ObservableObject, IDisposable
     private readonly HardwareService     _hardware     = new();
     private readonly NotificationService _notifications = new();
     private readonly LyricsService       _lyrics       = new();
+    private readonly DynamicThemeService _dynamicTheme = new();
+
+    // Public accessor for MainWindow
+    public DynamicThemeService DynamicTheme => _dynamicTheme;
 
     // ── Clock ─────────────────────────────────────────────────────────────────
     [ObservableProperty] private string _currentTime = "";
@@ -145,6 +149,7 @@ public partial class BarViewModel : ObservableObject, IDisposable
 
         _media.MediaChanged += OnMediaChanged;
         _ = _media.InitAsync();
+        System.Diagnostics.Debug.WriteLine("MediaService initialized!");
 
         _ = _weather.RunLoopAsync(async result =>
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
@@ -166,6 +171,12 @@ public partial class BarViewModel : ObservableObject, IDisposable
 
         // Zamanlı tema — clock ile aynı frekansta kontrol (1s), gecikme yok
         _ = RunScheduledThemeLoopAsync(ct);
+
+        // Dinamik tema servisi
+        _dynamicTheme.ThemeColorChanged += OnDynamicThemeColorChanged;
+        _dynamicTheme.SetUseContentColor(Settings.DynamicThemeUseContent);
+        if (Settings.EnableDynamicTheme)
+            _dynamicTheme.Start();
     }
 
     /// <summary>
@@ -598,12 +609,18 @@ public partial class BarViewModel : ObservableObject, IDisposable
         _clockTimer?.Stop();
         _lyricsTimer?.Stop();
         
+        // Servisleri dispose et
+        _dynamicTheme?.Dispose();
+        
         // Event subscription'ları temizle
         if (_media != null)
             _media.MediaChanged -= OnMediaChanged;
         
         if (_notifications != null)
             _notifications.NewNotificationArrived -= OnNewNotificationArrived;
+            
+        if (_dynamicTheme != null)
+            _dynamicTheme.ThemeColorChanged -= OnDynamicThemeColorChanged;
         
         // Settings event'ini temizle
         if (Settings != null)
@@ -612,6 +629,7 @@ public partial class BarViewModel : ObservableObject, IDisposable
 
     private void OnMediaChanged(MediaInfo info)
     {
+        System.Diagnostics.Debug.WriteLine($"OnMediaChanged: HasMedia={info.HasMedia}, Title={info.Title}, Artist={info.Artist}");
         System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
         {
             CurrentMedia = info;
@@ -641,7 +659,7 @@ public partial class BarViewModel : ObservableObject, IDisposable
         {
             _lyricsTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
-                Interval = TimeSpan.FromMilliseconds(200) // 200ms - daha az CPU
+                Interval = TimeSpan.FromMilliseconds(500) // 500ms - daha az CPU, yeterince responsive
             };
             _lyricsTimer.Tick += LyricsTimer_Tick;
         }
@@ -664,10 +682,14 @@ public partial class BarViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // MediaService'den gelen position'ı kullan
+        // MediaService'den gelen position'ı kullan + offset ekle
         var position = CurrentMedia.Position;
         if (position < TimeSpan.Zero)
             position = TimeSpan.Zero;
+        
+        // Lyrics offset ekle (ayarlanabilir, default 500ms)
+        // Pozitif değer lyrics'i ileri alır (erken gösterir)
+        position = position.Add(TimeSpan.FromMilliseconds(Settings.LyricsOffsetMs));
         
         // Mevcut zamana uygun lyrics satırını bul
         var currentLine = CurrentLyrics.SyncedLyrics
@@ -691,5 +713,72 @@ public partial class BarViewModel : ObservableObject, IDisposable
     {
         if (e.PropertyName == nameof(BarSettings.Use24HourClock)) UpdateTime();
         else if (e.PropertyName == nameof(BarSettings.WeatherProvince)) UpdateDistricts();
+        else if (e.PropertyName == nameof(BarSettings.EnableDynamicTheme))
+        {
+            if (Settings.EnableDynamicTheme)
+                _dynamicTheme.Start();
+            else
+                _dynamicTheme.Stop();
+        }
+        else if (e.PropertyName == nameof(BarSettings.DynamicThemeUseContent))
+        {
+            _dynamicTheme.SetUseContentColor(Settings.DynamicThemeUseContent);
+        }
+    }
+
+    // ── Dynamic Theme ─────────────────────────────────────────────────────────
+
+    private void OnDynamicThemeColorChanged(string hexColor)
+    {
+        if (!Settings.EnableDynamicTheme) return;
+
+        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            // Gradient animasyonu durdur (dinamik tema aktif)
+            GradientThemeRequested?.Invoke("Stop");
+            
+            if (Settings.DynamicThemeAnimated)
+            {
+                // Animasyonlu geçiş - ViewModel event fire et, MainWindow handle eder
+                DynamicThemeAnimationRequested?.Invoke(hexColor);
+            }
+            else
+            {
+                // Animasyonsuz direkt değişim
+                BarBackground = hexColor;
+            }
+            
+            ForegroundColor = "#FFFFFF";
+            BarOpacity = 0.9;
+            
+            // Settings'i güncelle ama Theme olarak "Dynamic" set et
+            Settings.Theme = "Dynamic";
+            SaveSettings();
+            
+            System.Diagnostics.Debug.WriteLine($"Dynamic theme applied: {hexColor} (Animated: {Settings.DynamicThemeAnimated})");
+        }, DispatcherPriority.Background);
+    }
+
+    // Event for animated color transition
+    public event Action<string>? DynamicThemeAnimationRequested;
+
+    [RelayCommand]
+    private void ToggleDynamicTheme()
+    {
+        System.Diagnostics.Debug.WriteLine($"ToggleDynamicTheme command executed! Current: {Settings.EnableDynamicTheme}");
+        Settings.EnableDynamicTheme = !Settings.EnableDynamicTheme;
+        System.Diagnostics.Debug.WriteLine($"New value: {Settings.EnableDynamicTheme}");
+        SaveSettings();
+        
+        if (Settings.EnableDynamicTheme)
+        {
+            System.Diagnostics.Debug.WriteLine("Starting dynamic theme service...");
+            _dynamicTheme.Start();
+        }
+        else
+        {
+            System.Diagnostics.Debug.WriteLine("Stopping dynamic theme service...");
+            _dynamicTheme.Stop();
+        }
     }
 }

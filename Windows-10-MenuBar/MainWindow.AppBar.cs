@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Windows_10_MenuBar.Interop;
@@ -13,6 +14,7 @@ public partial class MainWindow
     // ── Gradient theme animation ──────────────────────────────────────────────
 
     private Storyboard? _activeGradientSb;
+    private Storyboard? _activeDynamicColorSb;
 
     internal void OnGradientThemeRequested(string themeName)
     {
@@ -34,6 +36,69 @@ public partial class MainWindow
             _activeGradientSb = sbClone;
         }
         catch { }
+    }
+
+    // ── Dynamic theme color animation ─────────────────────────────────────────
+
+    internal void OnDynamicThemeAnimationRequested(string hexColor)
+    {
+        try
+        {
+            // Önceki animasyonu durdur
+            _activeDynamicColorSb?.Stop(this);
+            _activeDynamicColorSb = null;
+
+            // Yeni rengi parse et
+            var targetColor = (System.Windows.Media.Color)
+                System.Windows.Media.ColorConverter.ConvertFromString(hexColor);
+
+            // Smooth color transition (800ms) - optimize için GPU accelerated
+            var sb = new Storyboard();
+            
+            // Stop0 animasyonu
+            var anim0 = new System.Windows.Media.Animation.ColorAnimation
+            {
+                To = targetColor,
+                Duration = TimeSpan.FromMilliseconds(800),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase 
+                { 
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseInOut 
+                }
+            };
+            Storyboard.SetTarget(anim0, BarStop0);
+            Storyboard.SetTargetProperty(anim0, new PropertyPath(System.Windows.Media.GradientStop.ColorProperty));
+            sb.Children.Add(anim0);
+
+            // Stop1 animasyonu (aynı renk - düz renk efekti)
+            var anim1 = new System.Windows.Media.Animation.ColorAnimation
+            {
+                To = targetColor,
+                Duration = TimeSpan.FromMilliseconds(800),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase 
+                { 
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseInOut 
+                }
+            };
+            Storyboard.SetTarget(anim1, BarStop1);
+            Storyboard.SetTargetProperty(anim1, new PropertyPath(System.Windows.Media.GradientStop.ColorProperty));
+            sb.Children.Add(anim1);
+
+            // ViewModel'i de güncelle (animasyon bitince)
+            sb.Completed += (s, e) =>
+            {
+                _viewModel.BarBackground = hexColor;
+            };
+
+            sb.Begin(this, true);
+            _activeDynamicColorSb = sb;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Dynamic animation error: {ex.Message}");
+            // Fallback: animasyonsuz değişim
+            _viewModel.BarBackground = hexColor;
+            ApplyBarVisuals();
+        }
     }
 
     // ── Notification flash ────────────────────────────────────────────────────

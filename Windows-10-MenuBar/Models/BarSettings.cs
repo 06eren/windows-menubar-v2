@@ -25,6 +25,11 @@ public partial class BarSettings : ObservableObject
     [ObservableProperty] private int  _lightThemeStartHour  = 7;   // 07:00 → açık tema
     [ObservableProperty] private int  _darkThemeStartHour   = 20;  // 20:00 → koyu tema
 
+    // ── Dynamic Theme ──
+    [ObservableProperty] private bool _enableDynamicTheme = false;     // Aktif uygulamanın rengine göre tema
+    [ObservableProperty] private bool _dynamicThemeAnimated = false;   // Dinamik tema animasyonlu mu
+    [ObservableProperty] private bool _dynamicThemeUseContent = true;  // İçerik tabanlı renk (true) vs logo tabanlı (false)
+
     // ── Icon Visibility ──
     [ObservableProperty] private bool _showBluetooth = true;
     [ObservableProperty] private double _weatherOpacity = 0.1;
@@ -44,6 +49,7 @@ public partial class BarSettings : ObservableObject
     [ObservableProperty] private bool _showLyrics = false;            // Şarkı sözlerini göster
     [ObservableProperty] private bool _showAlbumArt = true;           // Album kapağını göster
     [ObservableProperty] private bool _showLyricsInBar = false;       // Bar'da anlık sözleri göster (karaoke mode)
+    [ObservableProperty] private int _lyricsOffsetMs = 500;           // Lyrics timing offset (ms) - pozitif değer ileri alır
 
     // ── Multi-Monitor ──
     [ObservableProperty] private bool _enableMultiMonitor = false;    // Çoklu monitör desteği

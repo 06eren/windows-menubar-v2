@@ -192,4 +192,27 @@ public partial class MainWindow
         SettingsService.Save();
         _viewModel?.SyncAllMonitorsCommand.Execute(null);
     }
+
+    // ── Dynamic Theme ─────────────────────────────────────────────────────────
+
+    private void DynamicTheme_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel != null)
+        {
+            // ToggleSwitch otomatik olarak IsChecked'i değiştirdiği için command'ı çağırmaya gerek yok
+            // Sadece servisi başlat/durdur
+            if (_viewModel.Settings.EnableDynamicTheme)
+            {
+                System.Diagnostics.Debug.WriteLine("Starting dynamic theme...");
+                _viewModel.DynamicTheme?.Start();
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Stopping dynamic theme...");
+                _viewModel.DynamicTheme?.Stop();
+            }
+            
+            SettingsService.Save();
+        }
+    }
 }

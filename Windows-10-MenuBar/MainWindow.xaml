@@ -446,6 +446,42 @@
                             </StackPanel>
                         </Grid>
 
+                        <!-- Dinamik Tema -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Dinamik Tema" Style="{StaticResource RowLabel}"/>
+                                <TextBlock Text="Aktif uygulamanın rengine göre otomatik tema değişimi"
+                                           FontSize="10" Foreground="#555" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.EnableDynamicTheme}"
+                                            Click="DynamicTheme_Changed" VerticalAlignment="Top"/>
+                        </Grid>
+                        
+                        <!-- Dinamik Tema Modu -->
+                        <Grid Margin="0,0,0,8" Visibility="{Binding Settings.EnableDynamicTheme, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="İçerik Tabanlı Renk" Style="{StaticResource RowLabel}"/>
+                                <TextBlock Text="Açık: Pencere içeriğinden renk • Kapalı: Uygulama logosundan renk"
+                                           FontSize="10" Foreground="#555" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.DynamicThemeUseContent, Mode=TwoWay}"
+                                            Click="Settings_Changed" VerticalAlignment="Top"/>
+                        </Grid>
+                        
+                        <!-- Dinamik Tema Animasyon -->
+                        <Grid Margin="0,0,0,18" Visibility="{Binding Settings.EnableDynamicTheme, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Smooth Renk Geçişi" Style="{StaticResource RowLabel}"/>
+                                <TextBlock Text="Renk değişimleri animasyonlu olsun (800ms geçiş)"
+                                           FontSize="10" Foreground="#555" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.DynamicThemeAnimated, Mode=TwoWay}"
+                                            Click="Settings_Changed" VerticalAlignment="Top"/>
+                        </Grid>
+
                         <!-- Separator -->
                         <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8,0,14"/>
 

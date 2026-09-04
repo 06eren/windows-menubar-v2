@@ -134,14 +134,29 @@ public class LyricsService
             // 1. LRCLIB (en iyi quality)
             var lrcLyrics = await FetchLrcLibAsync(artist, title);
             if (lrcLyrics != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Lyrics found: LRCLIB - {artist} - {title}");
                 return lrcLyrics;
+            }
 
             // 2. LRCGET (alternatif LRC source)
             lrcLyrics = await FetchLrcGetAsync(artist, title);
             if (lrcLyrics != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Lyrics found: LRCGET - {artist} - {title}");
                 return lrcLyrics;
+            }
 
-            // 3. Genius (fallback - text only)
+            // 3. Musixmatch (community lyrics)
+            var mxmLyrics = await FetchMusixmatchAsync(artist, title);
+            if (mxmLyrics != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Lyrics found: Musixmatch - {artist} - {title}");
+                return mxmLyrics;
+            }
+
+            // 4. Genius (fallback - text only)
+            System.Diagnostics.Debug.WriteLine($"Trying Genius fallback for {artist} - {title}");
             return await FetchGeniusLyricsAsync(artist, title);
         }
         catch (Exception ex)
@@ -203,6 +218,60 @@ public class LyricsService
                         Lyrics = text,
                         IsAvailable = true
                     };
+                }
+            }
+        }
+        catch { }
+        
+        return null;
+    }
+
+    /// <summary>
+    /// Musixmatch community lyrics (ücretsiz public API)
+    /// </summary>
+    private async Task<LyricsInfo?> FetchMusixmatchAsync(string artist, string title)
+    {
+        try
+        {
+            // Musixmatch public search endpoint
+            var query = Uri.EscapeDataString($"{artist} {title}");
+            var url = $"https://apic-desktop.musixmatch.com/ws/1.1/macro.subtitles.get?format=json&q={query}&user_language=en";
+            
+            _http.DefaultRequestHeaders.Clear();
+            _http.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0");
+            
+            var response = await _http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(response);
+            
+            // Lyrics path: message.body.macro_calls.track.subtitles.get.message.body.subtitle_list
+            if (doc.RootElement.TryGetProperty("message", out var message) &&
+                message.TryGetProperty("body", out var body) &&
+                body.TryGetProperty("macro_calls", out var macros))
+            {
+                foreach (var call in macros.EnumerateObject())
+                {
+                    if (call.Value.TryGetProperty("message", out var callMsg) &&
+                        callMsg.TryGetProperty("body", out var callBody) &&
+                        callBody.TryGetProperty("subtitle_list", out var subList) &&
+                        subList.GetArrayLength() > 0)
+                    {
+                        var firstSub = subList[0];
+                        if (firstSub.TryGetProperty("subtitle", out var subtitle) &&
+                            subtitle.TryGetProperty("subtitle_body", out var subBody))
+                        {
+                            var lrcText = subBody.GetString();
+                            if (!string.IsNullOrEmpty(lrcText))
+                            {
+                                return new LyricsInfo
+                                {
+                                    Artist = artist,
+                                    Title = title,
+                                    Lyrics = lrcText,
+                                    IsAvailable = true
+                                };
+                            }
+                        }
+                    }
                 }
             }
         }

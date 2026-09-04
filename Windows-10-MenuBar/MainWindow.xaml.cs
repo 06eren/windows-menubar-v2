@@ -75,6 +75,9 @@ public partial class MainWindow : Window
 
         // Gradient tema event'ini dinle
         _viewModel.GradientThemeRequested += OnGradientThemeRequested;
+        
+        // Dinamik tema animasyon event'ini dinle
+        _viewModel.DynamicThemeAnimationRequested += OnDynamicThemeAnimationRequested;
 
         // Başlangıçta kaydedilmiş tema gradient'sa yeniden başlat
         if (GradientThemeService.IsGradientTheme(_viewModel.Settings.Theme))
